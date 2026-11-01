@@ -1,0 +1,14 @@
+node_modules
+dist
+.next
+.env
+.env.local
+coverage
+playwright-report
+test-results
+*.log
+.dev-data
+.turbo
+.next-e2e
+test-results
+playwright-report

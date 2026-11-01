@@ -1,0 +1,151 @@
+# NoConMedia production stack. Copy .env.example to .env first (POSTGRES_PASSWORD is required).
+#   docker compose up -d --build --wait
+name: nocon-media
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  logging: *logging
+
+x-env-file: &env-file
+  - path: .env
+    required: false
+
+# "environment:" beats env_file, so anything users may legitimately change is passed through as ${VAR:-default}.
+x-app-env: &app-env
+  NODE_ENV: production
+  DATABASE_URL: postgres://${POSTGRES_USER:-nocon}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-nocon}
+  REDIS_URL: redis://redis:6379
+  # Values below that use ${VAR:-default} can be changed in .env. Anything without one is fixed by compose.
+  MEDIA_ROOT: ${MEDIA_ROOT:-/media}
+  MEDIA_ROOTS_ALLOWED: ${MEDIA_ROOTS_ALLOWED:-/media}
+  DATA_ROOT: /data
+  DEPLOYMENT_PROFILE: ${DEPLOYMENT_PROFILE:-lightweight}
+  NOCON_PROXY_SECRET: ${NOCON_PROXY_SECRET:?Set NOCON_PROXY_SECRET in .env (openssl rand -hex 32)}
+  APP_URL: ${APP_URL:-http://localhost:3000}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    <<: *hardening
+    # postgres needs a few capabilities at start-up (chown/gosu) so cap_drop ALL is relaxed here.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nocon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-nocon}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    shm_size: 128mb
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    <<: *hardening
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]  # entrypoint chowns /data then drops to redis
+    volumes:
+      - redisdata:/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    image: nocon-media/api:${NOCON_VERSION:-latest}
+    build: { context: ., dockerfile: docker/api/Dockerfile }
+    <<: *hardening
+    env_file: *env-file
+    environment:
+      <<: *app-env
+      API_HOST: 0.0.0.0
+      API_PORT: 3001
+      # Host-side port shown to Xtream clients; the same variable as the port mapping below.
+      API_PORT_PUBLIC: ${API_PORT_PUBLIC:-3001}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "${API_BIND:-0.0.0.0}:${API_PORT_PUBLIC:-3001}:3001"
+    volumes:
+      - ${MEDIA_PATH:-./media}:/media
+      - ${DATA_PATH:-./data}:/data
+    read_only: true
+    mem_limit: ${API_MEMORY:-512m}
+    pids_limit: 256
+    tmpfs:
+      - /tmp:size=64m,uid=1000,gid=1000
+    networks: [backend, frontend]
+    # Image HEALTHCHECK (GET /healthz) applies.
+
+  worker:
+    image: nocon-media/worker:${NOCON_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+      args:
+        YTDLP_VERSION: ${YTDLP_VERSION:-2026.10.26}
+    <<: *hardening
+    env_file: *env-file
+    environment:
+      <<: *app-env
+      XDG_CACHE_HOME: /data/cache
+    depends_on:
+      api: { condition: service_healthy } # the API runs the database migrations on boot
+    volumes:
+      - ${MEDIA_PATH:-./media}:/media
+      - ${DATA_PATH:-./data}:/data
+    cpus: ${WORKER_CPUS:-2.0}
+    pids_limit: 256
+    mem_limit: ${WORKER_MEMORY:-1g}
+    # Not read_only: yt-dlp and ffmpeg write caches under HOME. Heartbeat healthcheck is in the image.
+    networks: [backend, egress]
+
+  web:
+    image: nocon-media/web:${NOCON_VERSION:-latest}
+    build: { context: ., dockerfile: docker/web/Dockerfile }
+    <<: *hardening
+    environment:
+      API_INTERNAL_URL: http://api:3001
+      NOCON_PROXY_SECRET: ${NOCON_PROXY_SECRET:?Set NOCON_PROXY_SECRET in .env (openssl rand -hex 32)}
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    depends_on:
+      api: { condition: service_healthy }
+    ports:
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-3000}:3000"
+    read_only: true
+    mem_limit: ${WEB_MEMORY:-512m}
+    pids_limit: 256
+    tmpfs:
+      - /tmp:size=64m,uid=1000,gid=1000
+      - /app/apps/web/.next/cache:size=128m,uid=1000,gid=1000
+    networks: [frontend]
+
+networks:
+  # postgres, redis, api, worker. No route to the outside world.
+  backend:
+    internal: true
+  # api + web; carries the published ports. IP masquerade is off, so containers on it cannot reach the internet.
+  frontend:
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  # Normal bridge, used only by the worker for downloads.
+  egress: {}
+
+volumes:
+  pgdata:
+  redisdata:

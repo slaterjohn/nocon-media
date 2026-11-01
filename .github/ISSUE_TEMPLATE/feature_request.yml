@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a change or an addition
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe what you want to do and why the current behaviour does not allow it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you have tried
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Before you submit
+      options:
+        - label: I have searched existing issues and the documentation.
+          required: true
+        - label: This does not involve circumventing DRM or downloading content I have no right to.
+          required: true

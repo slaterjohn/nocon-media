@@ -1,0 +1,18 @@
+{
+  "name": "@nocon/shared",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.7",
+    "pino": "^10.4.0",
+    "cron-parser": "^5.10.3"
+  }
+}

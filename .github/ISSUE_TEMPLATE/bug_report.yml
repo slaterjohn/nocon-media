@@ -1,0 +1,61 @@
+name: Bug report
+description: Something does not work as the documentation says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. For security problems, use the private route in [SECURITY.md](https://github.com/slaterjohn/nocon-media/blob/main/SECURITY.md) instead of this form.
+  - type: input
+    id: platform
+    attributes:
+      label: Host platform and architecture
+      description: For example, Raspberry Pi 5 (8 GB) on Raspberry Pi OS 64-bit, arm64. Or Ubuntu 24.04 on amd64.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Docker Compose from a clone (docker compose up)
+        - scripts/install-pi.sh
+        - Running from source (pnpm dev)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: NoConMedia version or commit
+      description: The output of `git rev-parse --short HEAD`, or the NOCON_VERSION from your .env.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to Manage > Sources
+        2. Add a source with ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log excerpt
+      description: |
+        The relevant lines from `docker compose logs api worker web --since 15m`. Remove passwords, cookies, tokens and Xtream or M3U URLs that contain credentials before pasting.
+      render: text
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots, whether it worked before, and any changes you made to .env or compose.yml.

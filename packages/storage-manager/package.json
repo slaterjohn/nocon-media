@@ -1,0 +1,18 @@
+{
+  "name": "@nocon/storage-manager",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@nocon/shared": "workspace:*",
+    "@nocon/database": "workspace:*",
+    "drizzle-orm": "^0.45.4"
+  }
+}
