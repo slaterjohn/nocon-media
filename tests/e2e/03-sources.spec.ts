@@ -63,4 +63,36 @@ test.describe.serial("sources", () => {
     await row().getByRole("button", { name: /^Sync now/ }).click();
     await expect(page.getByText(/Sync started for/).first()).toBeVisible();
   });
+
+  test("automatic download switch: on by default, saved when off, shown on edit", async ({ page }) => {
+    const PLAYLIST = "https://www.youtube.com/playlist?list=PLfakeplaylist0001";
+    await page.getByRole("button", { name: "Add source" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "Add a source" });
+    await dialog.getByLabel("Address or handle").fill(PLAYLIST);
+    await expect(dialog.getByText(/Recognised a youtube playlist/)).toBeVisible();
+    await dialog.getByRole("button", { name: /^Advanced settings/ }).click();
+    const sw = dialog.getByRole("switch", { name: "Download new videos automatically" });
+    await expect(sw).toBeChecked();
+    await expect(dialog.getByText(/new videos from this source are listed but not downloaded/)).toBeVisible();
+    await sw.click();
+    await expect(sw).not.toBeChecked();
+    await dialog.getByRole("button", { name: "Add source" }).click();
+    await expect(dialog).toBeHidden();
+
+    const list = await (await page.request.get("/api/sources")).json();
+    const src = list.items.find((s: any) => s.externalId === "PLfakeplaylist0001");
+    expect(src.autoDownload).toBe(false);
+
+    try {
+      await page.reload();
+      const row = page.getByRole("row").filter({ hasText: /PLfakeplaylist0001|Fake Playlist/ });
+      await row.getByRole("button", { name: /^Edit/ }).click();
+      const edit = page.getByRole("dialog", { name: /Edit/ });
+      await edit.getByRole("button", { name: /^Advanced settings/ }).click();
+      await expect(edit.getByRole("switch", { name: "Download new videos automatically" })).not.toBeChecked();
+    } finally {
+      const del = await page.request.delete(`/api/sources/${src.id}?media=delete`, { headers: { "X-NoCon-CSRF": "1" } });
+      expect(del.ok()).toBeTruthy();
+    }
+  });
 });

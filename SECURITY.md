@@ -4,7 +4,7 @@
 
 Report vulnerabilities privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability** (a private security advisory). Please do not open a public issue or pull request for a security problem.
 
-Include what you found, the version or commit, how to reproduce it, and the impact you expect. You should get an acknowledgement within a week. NoConMedia is a small project, so fixes take as long as they take, but confirmed security issues come first.
+Include what you found, the version or commit, how to reproduce it, and the impact you expect. NoConMedia is a small project run on a best-effort basis, so there's no fixed time for a reply or a fix. Reports are read, and confirmed security issues come before other work.
 
 ## Supported versions
 

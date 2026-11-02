@@ -40,7 +40,7 @@ const csv = (v: string) => v.split(",").map((s) => s.trim()).filter(Boolean);
 const numOrUndef = (v: string) => (v.trim() === "" ? undefined : Number(v));
 const GB = 1024 ** 3;
 /** Error keys that belong to fields inside "Advanced settings". */
-const ADVANCED_KEYS = ["cron", "filters", "downloadOptions", "discovery", "automaticEviction", "volumeId"] as const;
+const ADVANCED_KEYS = ["cron", "filters", "downloadOptions", "discovery", "automaticEviction", "autoDownload", "volumeId"] as const;
 
 export function SourceForm({
   source,
@@ -66,6 +66,7 @@ export function SourceForm({
   const [retDays, setRetDays] = React.useState(String(source?.retention.days ?? 30));
   const [retQuotaGb, setRetQuotaGb] = React.useState(String(source?.retention.quotaBytes ? Math.round(source.retention.quotaBytes / GB) : 50));
   const [autoEvict, setAutoEvict] = React.useState(source?.automaticEviction ?? true);
+  const [autoDownload, setAutoDownload] = React.useState(source?.autoDownload ?? true);
   const [schedKind, setSchedKind] = React.useState<ScheduleKind>(source?.schedule.kind ?? "daily");
   const [cron, setCron] = React.useState(source?.schedule.cron ?? "0 3 * * *");
 
@@ -139,6 +140,7 @@ export function SourceForm({
       priority,
       retention: retention(),
       automaticEviction: autoEvict,
+      autoDownload,
       schedule: schedKind === "cron" ? { kind: "cron", cron: cron.trim() } : { kind: schedKind },
       filters: {
         maxAgeDays: numOrUndef(maxAge),
@@ -223,6 +225,7 @@ export function SourceForm({
   // Advanced values that differ from what a new source starts with.
   const changed = [
     !autoEvict,
+    !autoDownload,
     schedKind === "cron" && cron.trim() !== "0 3 * * *",
     [maxAge, minDur, maxDur, maxHist, maxNew, required, excluded, lang].some((v) => v.trim() !== ""),
     shorts, lives, audioOnly,
@@ -359,6 +362,12 @@ export function SourceForm({
           ) : (
             <p className="text-xs text-muted-foreground">Choose Custom cron under Schedule above to set your own times.</p>
           )}
+        </FormSection>
+
+        <FormSection title="Downloads">
+          <ToggleRow id="auto-download" label="Download new videos automatically" description="When off, new videos from this source are listed but not downloaded until you choose them.">
+            {(p) => <Switch {...p} checked={autoDownload} onCheckedChange={setAutoDownload} />}
+          </ToggleRow>
         </FormSection>
 
         <FormSection title="Filters" description="Leave a field empty for no limit.">
