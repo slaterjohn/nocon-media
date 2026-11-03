@@ -12,7 +12,7 @@ scripts/offline-test.sh                   # 23 checks with no internet access
 scripts/build-images.sh                   # arm64 + amd64 images
 ```
 
-Legend: **Verified** = covered by an automated test or a recorded manual run. **Outstanding** = not yet verified; the reason is given.
+Legend: **Verified** = covered by an automated test or a recorded manual run. **Outstanding** = not yet verified; the reason is given. **Deferred** = needs hardware that was not available; the Human chose on 3 November 2026 to defer these, and they are listed under "Deferred to hardware" below.
 
 ## Deployment
 
@@ -85,7 +85,7 @@ Legend: **Verified** = covered by an automated test or a recorded manual run. **
 | Seeking works | Verified | Range requests return 206 with the correct bytes. |
 | Client credentials can be revoked | Verified | API test and `tests/e2e/08-clients.spec.ts`. |
 | Offline playback works | Verified | Offline test `/movie` range request with no internet. |
-| Compatibility is validated against a real client | Verified with IPTVnator 0.24.0; **UHF outstanding** | IPTVnator (open-source Xtream player, macOS) passed all ten §16.6 items against real downloaded content; see "Real-client validation" below. UHF on Apple TV has not been tested yet; use the checklist in `docs/clients/uhf.md`. NoConMedia does not claim UHF compatibility until that is recorded. |
+| Compatibility is validated against a real client | Verified with IPTVnator 0.24.0; **UHF deferred (needs an Apple TV)** | IPTVnator (open-source Xtream player, macOS) passed all ten §16.6 items against real downloaded content; see "Real-client validation" below. UHF on Apple TV has not been tested yet; use the checklist in `docs/clients/uhf.md`. NoConMedia does not claim UHF compatibility until that is recorded. |
 
 ### Real-client validation: IPTVnator 0.24.0
 
@@ -117,9 +117,15 @@ The first run found that virtual categories (Recently added, Favourites, topic c
 | Storage disconnection does not destroy catalogue records | Verified | Scenario 8. |
 | Database and application backups can be restored | Verified | `scripts/backup.sh` then `scripts/restore.sh` on the verification stack, followed by a successful login. Restoring onto a different drive path was not tested. |
 
+## Deferred to hardware
+
+These need devices that were not available. Everything else in the specification was built and checked as recorded above.
+
+- **UHF on Apple TV.** Run the checklist in `docs/clients/uhf.md` and record the result in "Real-client validation". Until then NoConMedia claims compatibility with IPTVnator only.
+- **Raspberry Pi deployment and performance.** Follow `docs/guides/install-raspberry-pi.md` on a Pi 5 and a Pi 4, run `scripts/benchmark.sh`, and fill in the Pi rows of `docs/benchmarks.md`. Emulation does not count as Pi verification.
+
 ## Other outstanding work
 
-- **Raspberry Pi performance.** `docs/benchmarks.md` has only Apple Silicon numbers. Run `scripts/benchmark.sh` on a Pi 5 and a Pi 4 and fill in the rows. Emulation does not count as Pi verification.
 - **Egress blocking for api and web on Linux.** The `frontend` network disables IP masquerading, which Docker Desktop ignores. Check on Linux that the api and web containers cannot reach the internet.
 - **Browsers other than Chromium.** The player uses standard HTML5 video and hls.js, but Safari and Firefox have not been tested.
 - **Live playlist sync.** Only tested with the fake yt-dlp catalogue.
