@@ -179,6 +179,8 @@ async function refreshSourceInfo(ctx: WorkerContext, adapter: SourceAdapter, sou
   const info = await adapter.fetchSourceInfo(identified);
   const metadata = { ...source.metadata, title: info.title, description: info.description, avatarUrl: info.avatarUrl, bannerUrl: info.bannerUrl };
   const set: Partial<typeof s.sources.$inferInsert> = { metadata, updatedAt: new Date() };
+  // A source added by URL starts out named after its raw ID (a playlist has no handle); use the real title once known.
+  if (info.title && source.name === source.externalId) set.name = info.title;
 
   if (source.type === "channel") {
     const channelId = info.channelId ?? identified.externalId;

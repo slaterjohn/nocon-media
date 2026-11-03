@@ -7,7 +7,7 @@ How to re-run the evidence:
 ```bash
 pnpm -r typecheck
 pnpm test:infra && pnpm vitest run        # 393 unit + integration tests
-pnpm test:e2e                             # 44 Playwright tests
+pnpm test:e2e                             # 59 Playwright tests (Chromium)
 scripts/offline-test.sh                   # 23 checks with no internet access
 scripts/build-images.sh                   # arm64 + amd64 images
 ```
@@ -23,7 +23,8 @@ Legend: **Verified** = covered by an automated test or a recorded manual run. **
 | AMD64 images build | Verified | Same script under QEMU (api 84 MB, worker 286 MB, web 96 MB); the amd64 web image was started and served `/login`. The web build stage runs on the build platform because `next build` crashes under QEMU. |
 | Raspberry Pi deployment is documented | Verified | `docs/guides/install-raspberry-pi.md`, `scripts/install-pi.sh`. |
 | Persistent storage is configured safely | Verified | Named volumes for Postgres/Redis, bind mounts for media and data, volume marker file, refusal to use paths outside `MEDIA_ROOTS_ALLOWED`, warning when a folder is on the container's own filesystem. |
-| Application starts without cloud dependencies | Verified | `scripts/offline-test.sh` runs every service on an internal network with no egress. |
+| Application starts without cloud dependencies | Verified | `scripts/offline-test.sh` runs every service on an internal network with no egress. CI job `stack` runs it natively on amd64 and arm64 Linux (CI run 41682970957). |
+| api and web have no route to the internet on Linux | Verified | CI job `stack` starts the default stack with `docker compose up --wait` on `ubuntu-latest` and `ubuntu-24.04-arm`, and shows `api` and `web` cannot reach `https://www.youtube.com` (the `frontend` network's IP masquerade setting holds on Linux; Docker Desktop for Mac ignores it). CI run 41682970957. |
 
 ## Administration
 
@@ -41,7 +42,7 @@ Legend: **Verified** = covered by an automated test or a recorded manual run. **
 | Criterion | Status | Evidence |
 |---|---|---|
 | YouTube channels can be monitored | Verified | Live run against `@YouTube`: listing, filters and a 720p download. Fake-catalogue tests in CI. |
-| YouTube playlists can be monitored | Verified (fake yt-dlp only) | Playlist ordering and sync with the fake catalogue; not yet run against a live playlist. |
+| YouTube playlists can be monitored | Verified | Live run on 3 November 2026 (yt-dlp 2026.10.26) against the public Blender playlist "Settlers" (`PLa1F2ddGya_8Pn07ZxzgxFRw5iQbovXZv`, 8 videos): the source was added, sync catalogued all 8 in playlist order with the right IDs, titles and durations, and a second sync found 8 and created no new items or duplicates. Catalogue only; nothing was downloaded. Fake-catalogue tests in CI. |
 | Individual videos can be downloaded | Verified | Live run: "Me at the zoo" reached `ready` in about 6 s (H.264/AAC MP4, thumbnail, English captions, sidecar). |
 | New media can be fetched automatically | Verified | Scheduler and dispatcher tests; live channel sync queued new items. |
 | Downloads recover after interruption | Verified | Boot recovery test (state reset, reservation released, staging cleaned); `docker compose kill -s KILL worker` recovery. |
@@ -67,7 +68,7 @@ Legend: **Verified** = covered by an automated test or a recorded manual run. **
 |---|---|---|
 | Media can be browsed locally | Verified | `tests/e2e/05-library.spec.ts`. |
 | Search works offline | Verified | Offline test "search finds seeded title"; Postgres full-text search only. |
-| Videos play in the browser | Verified | `tests/e2e/06-playback.spec.ts` (Chromium: play, currentTime advances). Safari and Firefox not tested. |
+| Videos play in the browser | Verified | `tests/e2e/06-playback.spec.ts` (play, seek, pause, resume) and `tests/e2e/11-engine-media.spec.ts` (HLS path). Chromium: direct play and HLS (native). Firefox (Playwright build 1555, macOS): direct play and HLS through hls.js, 44 of 44 engine-subset tests passed. WebKit: configured (`pnpm test:e2e:webkit`) but not yet run, as Playwright's WebKit crashes at launch on the development Mac (macOS 26); it is to run in CI on Ubuntu. Safari itself (native HLS on macOS or iOS) is not tested. |
 | Seeking works | Verified | E2E slider and keyboard seeking; HTTP 206 range tests. |
 | Subtitles work where available | Verified | E2E captions control with a WebVTT track; live download included English captions. |
 | Playback progress is saved | Verified | E2E reload shows "Resuming from"; API progress test. |
@@ -126,7 +127,6 @@ These need devices that were not available. Everything else in the specification
 
 ## Other outstanding work
 
-- **Egress blocking for api and web on Linux.** The `frontend` network disables IP masquerading, which Docker Desktop ignores. Check on Linux that the api and web containers cannot reach the internet.
-- **Browsers other than Chromium.** The player uses standard HTML5 video and hls.js, but Safari and Firefox have not been tested.
-- **Live playlist sync.** Only tested with the fake yt-dlp catalogue.
+- **Safari and WebKit.** Firefox is covered (see Playback). The `firefox` and `webkit` Playwright projects run a subset: setup, auth, sources and downloads (needed to create a video), then playback (06), the HLS path (11) and the accessibility pass (09). Each test that needs decoding first checks `canPlayType` for the H.264/AAC fixture and skips with the measured reason if the engine build cannot decode it, so a skip means the build lacks the codec, not that playback works. WebKit has not run locally (launch crash on macOS 26) and real Safari has not been tested. Run one engine per invocation (`pnpm test:e2e:firefox`, `pnpm test:e2e:webkit`); they share ports 24000 and 24001.
+- **Live playlist sync, remaining gaps.** One live run (3 November 2026, yt-dlp 2026.10.26, 8-video playlist, catalogue only, local API and worker against a throwaway Postgres and Redis). It exposed two defects, now fixed with fake-yt-dlp regression tests: live `--flat-playlist -J` entries carry no `playlist_index` (positions are now numbered from the entry's place in the list), and the playlist's metadata title was the channel name ("Blender") rather than the playlist title, so a source added by URL kept the raw playlist ID as its name (it is now renamed to the playlist title on first sync). Not tested live: a video removed or made private within a playlist, a playlist reordered between syncs, playlists over 30 entries after the first sync, unlisted or private playlists, and downloading from a playlist source. After the fixes the source was deleted (media kept), re-added and synced twice: it was named "Settlers", linked the same 8 items in the same order, and the second sync again added nothing; the web interface was not used (API only).
 - **Security review findings.** All high and medium findings were fixed with regression tests (see `docs/security.md`). The remaining low-risk notes are floating base image tags and the deliberately admin-controlled `YTDLP_EXTRA_ARGS`.

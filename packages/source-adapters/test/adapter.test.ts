@@ -65,6 +65,17 @@ describe("mappers", () => {
     const i = mapSourceInfo({ channel: "C", description: "D", channel_id: "UC1", thumbnails: [{ id: "avatar_uncropped", url: "A" }, { id: "banner_uncropped", url: "B" }] });
     expect(i).toMatchObject({ title: "C", description: "D", avatarUrl: "A", bannerUrl: "B", channelId: "UC1" });
   });
+  it("playlist info as live yt-dlp returns it (captured 3 Nov 2026, trimmed)", () => {
+    const live = {
+      _type: "playlist", id: "PLa1F2ddGya_8Pn07ZxzgxFRw5iQbovXZv", title: "Settlers", channel: "Blender", channel_id: "UCSMOQeBJ2RAnuFungnQOxLg",
+      uploader: "Blender", availability: "public", playlist_count: 8,
+      entries: [{ _type: "url", ie_key: "Youtube", id: "BIRCCQHz-B8", url: "https://www.youtube.com/watch?v=BIRCCQHz-B8", title: "Settlers - Character Modeling Preparation", duration: 1103, channel: "Blender", channel_id: "UCSMOQeBJ2RAnuFungnQOxLg" }],
+    };
+    expect(mapSourceInfo(live, "playlist")).toMatchObject({ title: "Settlers", channelName: "Blender", channelId: "UCSMOQeBJ2RAnuFungnQOxLg" });
+    const e = mapFlatEntry(live.entries[0]!, false)!;
+    expect(e).toMatchObject({ externalId: "BIRCCQHz-B8", title: "Settlers - Character Modeling Preparation", durationSeconds: 1103 });
+    expect(e.position).toBeUndefined();
+  });
   it("media info", () => {
     const m = mapMediaInfo({ title: "t", duration: 10, upload_date: "20260101", channel_id: "UC1", channel: "C", chapters: [{ start_time: 0, end_time: 5, title: "x" }], subtitles: { en: [] }, tags: ["a"] });
     expect(m.chapters).toEqual([{ start: 0, end: 5, title: "x" }]);
@@ -86,6 +97,17 @@ describe("YouTubeAdapter with fake yt-dlp", () => {
     const p = adapter.identify("https://www.youtube.com/playlist?list=PLfakeplaylist0001")!;
     const e = await adapter.discover(p, { limit: 10 });
     expect(e.map((x) => x.position)).toEqual([1, 2]);
+  });
+  it("numbers playlist entries from their place in the list, as live yt-dlp gives no playlist_index", async () => {
+    const p = adapter.identify("https://www.youtube.com/playlist?list=PLfakeplaylist0001")!;
+    const all = await adapter.discover(p, { limit: 10 });
+    expect(all.map((x) => [x.externalId, x.position])).toEqual([["fakevid0001", 1], ["fakevid0002", 2]]);
+    const page = await adapter.discover(p, { limit: 1, offset: 1 });
+    expect(page.map((x) => [x.externalId, x.position])).toEqual([["fakevid0002", 2]]);
+  });
+  it("playlist source info is the playlist title, not the channel name", async () => {
+    const p = adapter.identify("https://www.youtube.com/playlist?list=PLfakeplaylist0001")!;
+    expect(await adapter.fetchSourceInfo(p)).toMatchObject({ title: "Fake Playlist", channelName: "Fake Playlist Owner" });
   });
   it("source info", async () => {
     const i = await adapter.fetchSourceInfo(ch);

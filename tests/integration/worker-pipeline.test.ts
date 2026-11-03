@@ -330,6 +330,37 @@ describe("reconcile", () => {
   });
 });
 
+describe("playlist sync", () => {
+  const ids = ["fakevid0003", "fakevid0001", "fakevid0002"]; // deliberately not id order
+  async function writeCatalog() {
+    const video = (n: number) => ({ id: `fakevid000${n}`, title: `Fake video ${n}`, duration: 120, upload_date: `2026102${n}`, channel_id: CHAN, channel: "Fake Channel", live_status: "not_live" });
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "nocon-catalog-"));
+    extraDirs.push(dir);
+    const file = path.join(dir, "catalog.json");
+    await fsp.writeFile(file, JSON.stringify({ channels: {}, playlists: { PLfakeplaylist0001: { title: "My Fake Playlist", entries: ids } }, videos: Object.fromEntries([1, 2, 3].map((n) => [`fakevid000${n}`, video(n)])) }));
+    process.env.FAKE_YTDLP_CATALOG = file;
+  }
+  const order = async (sourceId: string) => (await t.db.select({ pos: s.mediaSources.position, key: s.media.canonicalKey }).from(s.mediaSources)
+    .innerJoin(s.media, eq(s.media.id, s.mediaSources.mediaId)).where(eq(s.mediaSources.sourceId, sourceId)).orderBy(s.mediaSources.position)).map((r) => [r.pos, r.key]);
+
+  it("keeps playlist order, names the source after the playlist and is idempotent", async () => {
+    await writeCatalog();
+    const [src] = await t.db.insert(s.sources).values({
+      name: "PLfakeplaylist0001", externalId: "PLfakeplaylist0001", type: "playlist", url: "https://www.youtube.com/playlist?list=PLfakeplaylist0001", autoDownload: false, priority: "P1",
+    }).returning();
+    const expected = [[1, "youtube:fakevid0003"], [2, "youtube:fakevid0001"], [3, "youtube:fakevid0002"]];
+
+    expect(await runSync(ctx, { sourceId: src!.id, trigger: "manual" })).toMatchObject({ status: "success", discovered: 3, new: 3, queued: 0 });
+    expect(await order(src!.id)).toEqual(expected);
+    const [named] = await t.db.select().from(s.sources).where(eq(s.sources.id, src!.id));
+    expect(named!.name).toBe("My Fake Playlist");
+
+    expect(await runSync(ctx, { sourceId: src!.id, trigger: "manual" })).toMatchObject({ status: "success", discovered: 3, new: 0 });
+    expect(await order(src!.id)).toEqual(expected);
+    expect(await t.db.select().from(s.media)).toHaveLength(3);
+  });
+});
+
 describe("discovery", () => {
   const A = CHAN;
   const B = "UCfakeotherchannel000000";

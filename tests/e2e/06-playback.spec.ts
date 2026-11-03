@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { apiGet, firstMediaId, login } from "./helpers";
+import { apiGet, firstMediaId, login, skipUnlessH264 } from "./helpers";
 
 // The e2e catalogue adds a 30 s video ("Fake long video 4") so seeking and resuming have room.
 const time = (page: Page) => page.locator("video").evaluate((v: HTMLVideoElement) => v.currentTime);
@@ -12,7 +12,8 @@ test.describe.serial("playback", () => {
     if (!id) id = await firstMediaId(page, "Fake long video 4");
   });
 
-  test("video gets a source and plays, seeks, pauses", async ({ page }) => {
+  test("video gets a source and plays, seeks, pauses", async ({ page, browserName }) => {
+    await skipUnlessH264(page, test.skip, browserName);
     await page.goto(`/watch/${id}`);
     const video = page.locator("video");
     await expect(page.getByRole("heading", { level: 1, name: "Fake long video 4" })).toBeVisible();
@@ -42,7 +43,8 @@ test.describe.serial("playback", () => {
     await expect.poll(() => time(page)).toBeGreaterThan(19.5);
   });
 
-  test("progress is saved and resumes after reload", async ({ page }) => {
+  test("progress is saved and resumes after reload", async ({ page, browserName }) => {
+    await skipUnlessH264(page, test.skip, browserName);
     await page.goto(`/watch/${id}`);
     await expect.poll(() => page.locator("video").evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(2);
     await page.getByRole("button", { name: "Mute" }).click();

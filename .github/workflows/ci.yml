@@ -105,3 +105,29 @@ jobs:
           exit $rc
       - name: Offline stack test
         run: scripts/offline-test.sh
+
+  # Browser tests. Chromium runs every spec; Firefox and WebKit run the media subset (playwright.config.ts ENGINE_SPECS).
+  # One engine per step: they share ports 24000/24001. global-setup starts Postgres and Redis with compose.dev.yml.
+  # WebKit stays advisory until it has a track record (it is not Safari, and its Linux build may lack H.264).
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Browser end-to-end tests, Chromium
+        run: pnpm test:e2e
+      - name: Browser end-to-end tests, Firefox
+        run: pnpm test:e2e:firefox
+      - name: Browser end-to-end tests, WebKit (advisory)
+        continue-on-error: true
+        run: pnpm test:e2e:webkit

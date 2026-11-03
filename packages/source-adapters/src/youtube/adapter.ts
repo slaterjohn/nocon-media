@@ -8,6 +8,7 @@ import {
   type MediaInfo,
   type SourceAdapter,
   type SourceInfo,
+  type SourceKind,
 } from "../types.js";
 import { identifyYouTube } from "./identify.js";
 
@@ -157,7 +158,7 @@ export class YouTubeAdapter implements SourceAdapter {
     }
   }
 
-  private async listing(url: string, limit: number, offset: number, forceShort: boolean, signal?: AbortSignal): Promise<DiscoveredEntry[]> {
+  private async listing(url: string, limit: number, offset: number, forceShort: boolean, signal?: AbortSignal, numbered = false): Promise<DiscoveredEntry[]> {
     const args = ["--flat-playlist", "-J"];
     if (offset > 0) args.push("--playlist-start", String(offset + 1));
     args.push("--playlist-end", String(offset + limit));
@@ -165,9 +166,12 @@ export class YouTubeAdapter implements SourceAdapter {
     const entries: Json[] = Array.isArray(json.entries) ? json.entries : [];
     const fallback = typeof json.channel_id === "string" ? { id: json.channel_id, name: json.channel ?? json.uploader } : undefined;
     const out: DiscoveredEntry[] = [];
-    for (const e of entries) {
+    for (const [i, e] of entries.entries()) {
       const m = mapFlatEntry(e, forceShort, fallback);
-      if (m) out.push(m);
+      if (!m) continue;
+      // Live `--flat-playlist -J` entries carry no playlist_index, so number them from their place in the list.
+      if (numbered && m.position === undefined) m.position = offset + i + 1;
+      out.push(m);
     }
     return out;
   }
@@ -175,7 +179,7 @@ export class YouTubeAdapter implements SourceAdapter {
   async discover(src: IdentifiedSource, opts: DiscoverOptions = {}): Promise<DiscoveredEntry[]> {
     const limit = opts.limit ?? 50;
     const offset = opts.offset ?? 0;
-    if (src.type === "playlist") return this.listing(src.canonicalUrl, limit, offset, false, opts.signal);
+    if (src.type === "playlist") return this.listing(src.canonicalUrl, limit, offset, false, opts.signal, true);
     if (src.type === "video") {
       return [
         {
@@ -220,7 +224,7 @@ export class YouTubeAdapter implements SourceAdapter {
     }
     const target = src.type === "channel" ? `${src.canonicalUrl.replace(/\/+$/, "")}/videos` : src.canonicalUrl;
     const json = await this.runJson(["--flat-playlist", "-J", "--playlist-end", "1"], target, opts.signal);
-    return mapSourceInfo(json);
+    return mapSourceInfo(json, src.type);
   }
 
   async fetchMediaInfo(url: string, opts: { signal?: AbortSignal } = {}): Promise<MediaInfo> {
@@ -245,7 +249,7 @@ export class YouTubeAdapter implements SourceAdapter {
   }
 }
 
-export function mapSourceInfo(json: Json): SourceInfo {
+export function mapSourceInfo(json: Json, type?: SourceKind): SourceInfo {
   const thumbs: Json[] = Array.isArray(json.thumbnails) ? json.thumbnails.filter((t: Json) => typeof t?.url === "string") : [];
   const byId = (id: string) => thumbs.find((t) => t.id === id)?.url as string | undefined;
   const avatar =
@@ -253,7 +257,8 @@ export function mapSourceInfo(json: Json): SourceInfo {
   const banner =
     byId("banner_uncropped") ?? thumbs.find((t) => typeof t.id === "string" && /banner/.test(t.id))?.url ?? thumbs.find((t) => t.width && t.height && t.width > t.height * 3)?.url ?? null;
   const info: SourceInfo = {
-    title: String(json.channel ?? json.title ?? json.uploader ?? ""),
+    // A playlist is named by its own title; a channel listing by the channel name (its title is "<name> - Videos").
+    title: String(type === "playlist" ? (json.title ?? json.channel ?? "") : (json.channel ?? json.title ?? json.uploader ?? "")),
     description: String(json.description ?? ""),
     avatarUrl: avatar ?? null,
     bannerUrl: banner ?? null,

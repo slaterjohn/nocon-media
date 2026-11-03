@@ -211,7 +211,12 @@ if (vid && !plist && !flag("--flat-playlist")) {
 }
 if (plist && catalog.playlists[plist]) {
   const p = catalog.playlists[plist];
-  out({ _type: "playlist", id: plist, title: p.title, playlist_count: p.entries.length, entries: slice(p.entries).map((x) => flatEntry(x.id, x.n)) });
+  // Shaped like live yt-dlp: playlist-level channel fields, and flat entries with no playlist_index.
+  out({
+    _type: "playlist", id: plist, title: p.title, playlist_count: p.entries.length,
+    channel: p.channel ?? "Fake Playlist Owner", channel_id: p.channel_id ?? "UCfakeplaylistowner0000", uploader: p.channel ?? "Fake Playlist Owner",
+    entries: slice(p.entries).map((x) => flatEntry(x.id)),
+  });
   process.exit(0);
 }
 if (chan || handle) {
