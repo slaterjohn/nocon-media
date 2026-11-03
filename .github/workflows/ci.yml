@@ -70,3 +70,38 @@ jobs:
 
       - name: Validate compose file
         run: docker compose --env-file .env.example config --quiet
+
+  # Linux check of the network layout: `api` and `web` sit on `backend` (internal) and `frontend` (IP masquerade off),
+  # so they must not reach the internet. Docker Desktop for Mac ignores the masquerade setting, so this needs a Linux host.
+  # `worker` is on `egress` by design (it downloads), so it is not checked here; scripts/offline-test.sh removes that too.
+  stack:
+    name: stack (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose up, health and egress check
+        env:
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}
+          NOCON_PROXY_SECRET: ci-compose-only-${{ github.run_id }}
+        run: |
+          export MEDIA_PATH="$RUNNER_TEMP/media" DATA_PATH="$RUNNER_TEMP/data"
+          mkdir -p "$MEDIA_PATH" "$DATA_PATH" && chmod 777 "$MEDIA_PATH" "$DATA_PATH"
+          docker compose up -d --build --wait --wait-timeout 300
+          curl -fsS -o /dev/null -w "web %{http_code}\n" http://127.0.0.1:3000/login || { docker compose logs --tail 80; exit 1; }
+          rc=0
+          for svc in api web; do
+            if docker compose exec -T "$svc" node -e "fetch('https://www.youtube.com',{signal:AbortSignal.timeout(6000)}).then(()=>process.exit(1),()=>process.exit(0))"; then
+              echo "PASS  $svc cannot reach https://www.youtube.com"
+            else
+              echo "FAIL  $svc REACHED https://www.youtube.com"; rc=1
+            fi
+          done
+          docker compose down -v
+          exit $rc
+      - name: Offline stack test
+        run: scripts/offline-test.sh
