@@ -361,6 +361,79 @@ describe("playlist sync", () => {
   });
 });
 
+describe("playlist sync over time", () => {
+  const PL = "PLfakeplaylist0002";
+  const vid = (id: string, title: string, extra: Record<string, unknown> = {}) => ({ id, title, duration: 120, upload_date: "20261020", channel_id: CHAN, channel: "Fake Channel", live_status: "not_live", ...extra });
+  async function writeCatalog(entries: string[], videos: Record<string, unknown>) {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "nocon-catalog-"));
+    extraDirs.push(dir);
+    const file = path.join(dir, "catalog.json");
+    await fsp.writeFile(file, JSON.stringify({ channels: {}, playlists: { [PL]: { title: "Evolving Playlist", entries } }, videos }));
+    process.env.FAKE_YTDLP_CATALOG = file;
+  }
+  async function addSource() {
+    const [src] = await t.db.insert(s.sources).values({
+      name: PL, externalId: PL, type: "playlist", url: `https://www.youtube.com/playlist?list=${PL}`, autoDownload: false, priority: "P1",
+    }).returning();
+    return src!;
+  }
+  const rows = async (sourceId: string) => (await t.db.select({ pos: s.mediaSources.position, key: s.media.canonicalKey, title: s.media.title }).from(s.mediaSources)
+    .innerJoin(s.media, eq(s.media.id, s.mediaSources.mediaId)).where(eq(s.mediaSources.sourceId, sourceId)).orderBy(s.mediaSources.position));
+  const order = async (sourceId: string) => (await rows(sourceId)).map((r) => [r.pos, r.key]);
+  const A = "fakevid0001", B = "fakevid0002", C = "fakevid0003";
+  const base = () => ({ [A]: vid(A, "Video A"), [B]: vid(B, "Video B"), [C]: vid(C, "Video C") });
+
+  it("is reordered between syncs: positions follow the playlist, nothing is duplicated", async () => {
+    await writeCatalog([A, B, C], base());
+    const src = await addSource();
+    await runSync(ctx, { sourceId: src.id, trigger: "manual" });
+    expect(await order(src.id)).toEqual([[1, `youtube:${A}`], [2, `youtube:${B}`], [3, `youtube:${C}`]]);
+
+    await writeCatalog([C, A, B], base());
+    expect(await runSync(ctx, { sourceId: src.id, trigger: "manual" })).toMatchObject({ status: "success", discovered: 3, new: 0 });
+    expect(await order(src.id)).toEqual([[1, `youtube:${C}`], [2, `youtube:${A}`], [3, `youtube:${B}`]]);
+    expect(await t.db.select().from(s.media)).toHaveLength(3);
+  });
+
+  it("keeps a video that is removed from the playlist, and keeps the real title of one made private", async () => {
+    await writeCatalog([A, B, C], base());
+    const src = await addSource();
+    await runSync(ctx, { sourceId: src.id, trigger: "manual" });
+
+    // B is made private: yt-dlp still lists it, as a placeholder with no duration or channel. C is removed outright.
+    await writeCatalog([A, B], { [A]: vid(A, "Video A"), [B]: { id: B, title: "[Private video]" } });
+    expect(await runSync(ctx, { sourceId: src.id, trigger: "manual" })).toMatchObject({ status: "success", discovered: 2, new: 0, skipped: 1 });
+    const after = await rows(src.id);
+    expect(after.map((r) => [r.pos, r.key, r.title])).toEqual([[1, `youtube:${A}`, "Video A"], [2, `youtube:${B}`, "Video B"], [3, `youtube:${C}`, "Video C"]]);
+    expect(await t.db.select().from(s.media)).toHaveLength(3);
+  });
+
+  it("does not catalogue a private or deleted placeholder on the first sync", async () => {
+    const P = "fakevid0004", D = "fakevid0005";
+    await writeCatalog([A, P, D, B], { [A]: vid(A, "Video A"), [B]: vid(B, "Video B"), [P]: { id: P, title: "[Private video]" }, [D]: { id: D, title: "[Deleted video]" } });
+    const src = await addSource();
+    expect(await runSync(ctx, { sourceId: src.id, trigger: "manual" })).toMatchObject({ status: "success", discovered: 4, new: 2, skipped: 2 });
+    // positions are the places in the playlist, so the gap shows where the unavailable entries sit
+    expect(await order(src.id)).toEqual([[1, `youtube:${A}`], [4, `youtube:${B}`]]);
+  });
+
+  it("finds videos appended past entry 30 on later syncs", async () => {
+    const ids = Array.from({ length: 32 }, (_, i) => `fakepl${String(i + 1).padStart(5, "0")}`);
+    const videos = (list: string[]) => Object.fromEntries(list.map((id, i) => [id, vid(id, `Entry ${i + 1}`)]));
+    await writeCatalog(ids, videos(ids));
+    const src = await addSource();
+    expect(await runSync(ctx, { sourceId: src.id, trigger: "manual" })).toMatchObject({ status: "success", discovered: 32, new: 32 });
+
+    // YouTube appends new playlist videos at the end, beyond the 30 a channel sync would look at.
+    const grown = [...ids, ...Array.from({ length: 5 }, (_, i) => `fakepl${String(i + 33).padStart(5, "0")}`)];
+    await writeCatalog(grown, videos(grown));
+    expect(await runSync(ctx, { sourceId: src.id, trigger: "manual" })).toMatchObject({ status: "success", discovered: 37, new: 5 });
+    const final = await order(src.id);
+    expect(final).toHaveLength(37);
+    expect(final[36]).toEqual([37, "youtube:fakepl00037"]);
+  });
+});
+
 describe("discovery", () => {
   const A = CHAN;
   const B = "UCfakeotherchannel000000";

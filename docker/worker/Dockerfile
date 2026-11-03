@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7.1@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # NoConMedia worker (yt-dlp + ffmpeg). Build context: repository root.
-ARG NODE_IMAGE=node:24-trixie-slim
+ARG NODE_IMAGE=node:24.22.2-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /repo

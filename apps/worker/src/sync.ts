@@ -26,6 +26,11 @@ export interface SyncResult {
 const empty = (status: SyncResult["status"], error?: string): SyncResult => ({ status, discovered: 0, new: 0, queued: 0, skipped: 0, ...(error ? { error } : {}) });
 
 /** Source filters applied in documented order. Returns the skip reason or null. Unknown values pass. */
+/** How many playlist entries a repeat sync examines (the first sync uses the source's maxHistorical). */
+export const PLAYLIST_RESYNC_LIMIT = 500;
+/** Titles yt-dlp's flat listing gives to playlist entries that are no longer viewable. */
+const PLACEHOLDER_TITLES = new Set(["[private video]", "[deleted video]"]);
+
 export function filterEntry(e: DiscoveredEntry, f: Partial<SourceFilters>, now = new Date()): string | null {
   if (f.maxAgeDays && e.publishedAt && now.getTime() - e.publishedAt.getTime() > f.maxAgeDays * 86_400_000) return "too-old";
   if (e.durationSeconds !== undefined) {
@@ -123,7 +128,9 @@ async function listEntries(adapter: SourceAdapter, source: Source, identified: I
       ...(info.thumbnailUrl ? { thumbnailUrl: info.thumbnailUrl } : {}), description: info.description,
     }];
   }
-  const limit = source.hasRun ? 30 : (f.maxHistorical ?? 50);
+  // Channels list newest first, so 30 is enough after the first run. Playlists list in the owner's order and
+  // YouTube appends new videos at the end, so later runs must look much further down the list.
+  const limit = source.hasRun ? (source.type === "playlist" ? PLAYLIST_RESYNC_LIMIT : 30) : (f.maxHistorical ?? 50);
   if (limit <= 0) return [];
   return adapter.discover(identified, { limit, includeShorts: f.includeShorts ?? false, includeLive: f.includeLive ?? false });
 }
@@ -146,6 +153,9 @@ async function syncSource(ctx: WorkerContext, adapter: SourceAdapter, source: So
 
   for (const e of entries) {
     position++;
+    // A video made private or deleted stays in the listing as a placeholder. Do not catalogue it, and do not let
+    // it overwrite the real title of an item already in the library. Existing items and their files are untouched.
+    if (PLACEHOLDER_TITLES.has(e.title.trim().toLowerCase())) { result.skipped++; continue; }
     // Explicitly requested single videos and searches skip the filters that describe a channel feed.
     const skip = source.type === "video" ? null : filterEntry(e, filters);
     if (skip) { result.skipped++; continue; }

@@ -61,6 +61,19 @@ The browser talks to the `web` container, which proxies `/api/*` to the API. Wit
 - Per-source cookie files for yt-dlp are uploaded with `PUT /api/sources/:id/cookies` and stored at `${DATA_ROOT}/secrets/source-<id>.txt` (file mode 0600, folder mode 0700), never on the media volume. The upload is limited to 1 MiB and must look like a Netscape cookies file. No route returns the path or the contents (sources only expose `hasCookies`), the activity log and API logs never contain them, and deleting the source deletes the file. See `docs/guides/sources.md#cookies`.
 - Sidecar `metadata.json` files contain public video metadata only — no viewing history, no credentials.
 
+## Container images and supply chain
+
+- **Base images are pinned.** Every base image is pinned to an exact version tag plus the digest of its multi-architecture index, for example `node:24.22.2-trixie-slim@sha256:...`, so amd64 and arm64 builds resolve the same content and a registry tag move cannot change a build. This covers the `NODE_IMAGE` default and the `# syntax=` line in `docker/*/Dockerfile`, the `postgres` and `redis` images in `compose.yml` and `compose.dev.yml`, the `node` image in `compose.offline.yml` and the `busybox` image in `scripts/offline-test.sh`. The previous low-risk finding about floating tags is closed.
+- **yt-dlp** is pinned separately with `YTDLP_VERSION` (bump it with `scripts/update-yt-dlp.sh`).
+- **`YTDLP_EXTRA_ARGS` is admin-controlled by design.** Only an administrator can set it, as an environment variable on the host. There is no API or web interface for it, so a web user or API client cannot reach it. yt-dlp options such as `--exec` run commands in the worker, which is accepted because the person who can set host environment variables already controls the deployment. This is a design decision, not an open finding.
+
+### Bumping a pinned image
+
+1. Choose the new exact tag on the same major/minor line (for example `node:24.23.0-trixie-slim`).
+2. Get the multi-arch index digest: `docker buildx imagetools inspect <image>:<tag>`. Use the top-level `Digest:` line, not a per-platform manifest digest.
+3. Replace `<tag>@sha256:<digest>` in every file that uses the image (`grep -rn "<image>" docker compose*.yml scripts`). Keep the tag in front of the digest so the pin stays readable.
+4. Run `docker compose -f compose.yml --env-file .env.example config --quiet` and `docker compose build api worker web`, then the test suite.
+
 ## Network exposure
 
 Only `web:3000` and `api:3001` are published. PostgreSQL and Redis are on an internal Docker network with no published ports. See `docs/guides/reverse-proxy.md` for HTTPS with Caddy.

@@ -119,6 +119,8 @@ Local builds are tagged `nocon-media/<service>:<version>-arm64` and `-amd64`. Th
 
 For everyday use, `docker compose up -d --build` builds the images for your own architecture.
 
+Base images are pinned to an exact tag plus multi-arch digest (`image:tag@sha256:...`). To bump one, follow "Bumping a pinned image" in [security.md](security.md#container-images-and-supply-chain). yt-dlp is pinned separately by `YTDLP_VERSION`.
+
 ## Adding a source adapter
 
 The contract is the `SourceAdapter` interface in `packages/source-adapters/src/types.ts` (described in [source-adapters.md](source-adapters.md)). To add a platform:
