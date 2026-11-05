@@ -1,10 +1,10 @@
 # Install on a Raspberry Pi
 
-This guide takes a Raspberry Pi 5 (or Pi 4) with a USB drive from a blank SD card to a running NoConMedia. It assumes you will manage the Pi over SSH. Real-world performance on Pi hardware has not been benchmarked yet; see [benchmarks](../benchmarks.md).
+This guide takes a Raspberry Pi 5 (or Pi 4) with a USB drive from a blank SD card to a running NoConMedia. It assumes you will manage the Pi over SSH. The guide was followed end to end on a Pi 4 with 2 GB of RAM on 5 November 2026; see [benchmarks](../benchmarks.md) for what that run measured. It has not been run on a Pi 5.
 
 ## What you need
 
-- Raspberry Pi 5 (4 or 8 GB) or Pi 4 (4 or 8 GB).
+- Raspberry Pi 5 (4 or 8 GB) or Pi 4 (4 or 8 GB). A Pi 4 with 2 GB also ran the lightweight profile, with the caveats under [Low memory](#low-memory-2-gb-pi).
 - The official 27 W USB-C power supply for a Pi 5. A weaker supply makes the Pi limit power to USB devices, and a bus-powered drive may disconnect under load.
 - An active cooler (the Pi 5 Active Cooler, or a case with a fan). Transcoding is off, but downloads, remuxing and the database still keep the CPU busy for long stretches.
 - A microSD card of 16 GB or more for the operating system.
@@ -24,7 +24,7 @@ This guide takes a Raspberry Pi 5 (or Pi 4) with a USB drive from a blank SD car
 Connect from your computer, using the username and hostname you chose:
 
 ```bash
-ssh pi@nocon.local
+ssh <username>@<hostname>.local
 ```
 
 Then bring the system up to date and confirm it is 64-bit:
@@ -114,6 +114,24 @@ The containers run as UID 1000. Make the drive writable by that user:
 sudo chown 1000:1000 /mnt/nocon-media
 ```
 
+## Turn on memory limits
+
+Raspberry Pi OS does not enable the kernel's memory cgroup controller by default. Without it Docker ignores the memory limits in `compose.yml` (such as `WORKER_MEMORY`), `docker stats` shows `0B / 0B` for memory, and `docker info` and `docker compose up` print "Your kernel does not support memory limit capabilities". Check:
+
+```bash
+grep memory /proc/cgroups
+```
+
+If the last column is `0` or the line is missing, add `cgroup_enable=memory cgroup_memory=1` to the end of the single line in `/boot/firmware/cmdline.txt` (keep it one line), then reboot:
+
+```bash
+sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
+sudo sed -i '1s/$/ cgroup_enable=memory cgroup_memory=1/' /boot/firmware/cmdline.txt
+sudo reboot
+```
+
+This is the usual fix for Raspberry Pi OS but has not been tested on the Pi used for the verification run. That run proceeded without limits, so the stack was not memory-capped.
+
 ## Install NoConMedia
 
 ```bash
@@ -134,12 +152,16 @@ DEPLOYMENT_PROFILE=lightweight
 
 If you want to adjust worker limits, `WORKER_CPUS=2.0` and `WORKER_MEMORY=1g` are the defaults and the example file suggests them for a Pi 4 or 5.
 
-Build and start. The first build on a Pi takes several minutes.
+Build and start. The first build on a Pi takes several minutes: 9 minutes on a Pi 4 with 2 GB (SD card, Wi-Fi), most of it installing packages and compiling the web app.
 
 ```bash
 docker compose up -d --build --wait
 docker compose ps
 ```
+
+### Without a USB drive
+
+For a trial you can use a folder on the SD card, for example `sudo mkdir -p /srv/nocon-media && sudo chown 1000:1000 /srv/nocon-media`, and pass it to `scripts/install-pi.sh` in place of `/mnt/nocon-media`. The wizard accepts it (it reports the SD card as the filesystem). Video fills an SD card quickly and wears it, and the "drive unplugged" protection below does not apply, so use a drive for a real library.
 
 ## Run the setup wizard
 
@@ -154,6 +176,10 @@ Open `http://nocon.local:3000` (or the Pi's IP address) and follow the wizard de
 The worker takes its concurrency from the profile saved in the setup wizard or in **Settings > General**. `DEPLOYMENT_PROFILE` in `.env` (`lightweight` unless you change it) is only the default until a profile has been saved. In the lightweight profile it runs one download, one conversion and one metadata job at a time, checks discovery every 12 hours, uses small database pools, and skips generating thumbnails with ffmpeg. The standard profile runs three downloads, two conversions and three metadata jobs. A profile changed in Settings reaches the worker within about a minute; no restart is needed. `MAX_CONCURRENT_DOWNLOADS`, `MAX_CONCURRENT_PROCESSING` and `MAX_CONCURRENT_METADATA` in `.env`, if set, override the profile's numbers.
 
 In the lightweight profile you may also want to turn off HLS preparation, which uses CPU and disk to make a segmented copy of files a browser cannot play directly. Turn off "HLS streaming" in **Settings > External player access > Advanced settings**, or set `ENABLE_HLS=false` in `.env`.
+
+### Low memory (2 GB Pi)
+
+On a Pi 4 with 2 GB the lightweight stack idled at about 420 MiB of process memory, with 35 MiB of swap in use, and the build finished without running out of memory. The standard profile, several concurrent downloads and HLS preparation were not tried on 2 GB and are likely to be tight. Raspberry Pi OS ships with a swap file; leave it enabled during the build.
 
 ## If the drive is unplugged
 

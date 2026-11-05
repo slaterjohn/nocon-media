@@ -1,6 +1,6 @@
 # MVP acceptance status
 
-Status of each item in the specification's final acceptance criteria (§30), with the evidence behind it. Recorded on 1 November 2026 on an Apple Silicon Mac running Docker Desktop (native arm64 containers, amd64 under QEMU emulation). Nothing here has been run on Raspberry Pi hardware yet.
+Status of each item in the specification's final acceptance criteria (§30), with the evidence behind it. Recorded on 1 November 2026 on an Apple Silicon Mac running Docker Desktop (native arm64 containers, amd64 under QEMU emulation). The Raspberry Pi 4 Model B (2 GB) check was recorded on 5 November 2026; see "Raspberry Pi verification" below. Nothing has been run on a Pi 5.
 
 How to re-run the evidence:
 
@@ -21,7 +21,7 @@ Legend: **Verified** = covered by an automated test or a recorded manual run. **
 | Docker Compose deployment works | Verified | Full stack (postgres, redis, api, worker, web) starts healthy with `docker compose up -d --wait`; setup completed through the API and the web proxy. |
 | ARM64 images build | Verified | `scripts/build-images.sh` (api 84 MB, worker 281 MB, web 96 MB). |
 | AMD64 images build | Verified | Same script under QEMU (api 84 MB, worker 286 MB, web 96 MB); the amd64 web image was started and served `/login`. The web build stage runs on the build platform because `next build` crashes under QEMU. |
-| Raspberry Pi deployment is documented | Verified | `docs/guides/install-raspberry-pi.md`, `scripts/install-pi.sh`. |
+| Raspberry Pi deployment is documented | Verified | `docs/guides/install-raspberry-pi.md`, `scripts/install-pi.sh`. Followed end to end on a Pi 4 (2 GB) on 5 November 2026; see "Raspberry Pi verification". |
 | Persistent storage is configured safely | Verified | Named volumes for Postgres/Redis, bind mounts for media and data, volume marker file, refusal to use paths outside `MEDIA_ROOTS_ALLOWED`, warning when a folder is on the container's own filesystem. |
 | Application starts without cloud dependencies | Verified | `scripts/offline-test.sh` runs every service on an internal network with no egress. CI job `stack` runs it natively on amd64 and arm64 Linux (CI run 41682970957). |
 | api and web have no route to the internet on Linux | Verified | CI job `stack` starts the default stack with `docker compose up --wait` on `ubuntu-latest` and `ubuntu-24.04-arm`, and shows `api` and `web` cannot reach `https://www.youtube.com` (the `frontend` network's IP masquerade setting holds on Linux; Docker Desktop for Mac ignores it). CI run 41682970957. |
@@ -118,13 +118,23 @@ The first run found that virtual categories (Recently added, Favourites, topic c
 | Storage disconnection does not destroy catalogue records | Verified | Scenario 8. |
 | Database and application backups can be restored | Verified | `scripts/backup.sh` then `scripts/restore.sh` on the verification stack, followed by a successful login. Restoring onto a different drive path was not tested. |
 
+## Raspberry Pi verification (5 November 2026)
+
+**Verified on a Raspberry Pi 4 Model B Rev 1.5 with 2 GB of RAM. Not verified on a Pi 5.** Raspberry Pi OS Lite 64-bit (Debian 13 Trixie, kernel 6.18), a freshly flashed 58 GB SD card, Wi-Fi only. No USB drive was attached, so the library lived in `/srv/nocon-media` on the SD card instead of a mounted drive; the "If the drive is unplugged" behaviour was not exercised.
+
+- `docs/guides/install-raspberry-pi.md` was followed with Docker from get.docker.com and a clone from GitHub. `docker compose up -d --build --wait` built all three images on the Pi in 547 s (9 min 7 s) and every service reached healthy. The build did not run out of memory (the OS image has 1.8 GB of swap). There were no kernel out-of-memory messages.
+- The setup wizard was completed through the API with the lightweight profile. A 19-second public test video was downloaded at 480p, a range request returned 206, and the Xtream `get_vod_streams` call listed the item.
+- `scripts/benchmark.sh` ran; results are in `docs/benchmarks.md`.
+- `scripts/offline-test.sh` passed 23 of 23 checks (42 s including image checks, images cached).
+- Problems found, now in the guide: the memory cgroup controller is off by default on this image, so Docker ignores the container memory limits and `docker stats` shows no memory figures; the guide also assumed the USB drive. The kernel setting that enables the controller was not applied on this Pi, so the guide's fix has not itself been tested.
+- Not covered: a Pi 5, a Pi with 4 GB or more, a USB drive, Ethernet, the standard profile, sustained downloads and HLS preparation, and playback on a real client over the network.
+
 ## Deferred to hardware
 
-These need devices that were not available. Everything else in the specification was built and checked as recorded above.
+These need devices that were not available. Everything else in the specification was built and checked as recorded above. Raspberry Pi 5 verification also remains deferred: follow `docs/guides/install-raspberry-pi.md` on a Pi 5, run `scripts/benchmark.sh` and fill in the Pi 5 rows of `docs/benchmarks.md`.
 
 - **UHF on Apple TV.** Run the checklist in `docs/clients/uhf.md` and record the result in "Real-client validation". Until then NoConMedia claims compatibility with IPTVnator only.
 - **Real Safari.** Playwright's WebKit passes the media subset in CI (44 tests, none skipped, CI run 41686333991), but WebKit is not Safari and it crashes at launch on macOS 26 here. A person on a Mac plays a video in Safari, directly and through HLS, and records the result.
-- **Raspberry Pi deployment and performance.** Follow `docs/guides/install-raspberry-pi.md` on a Pi 5 and a Pi 4, run `scripts/benchmark.sh`, and fill in the Pi rows of `docs/benchmarks.md`. Emulation does not count as Pi verification.
 
 ## Resolved notes
 

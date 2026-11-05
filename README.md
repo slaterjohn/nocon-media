@@ -90,7 +90,7 @@ NoConMedia is at version 0.1. It is feature-complete for its first release but h
 
 - Tested with IPTVnator as an Xtream client.
 - UHF on Apple TV has not been confirmed yet. The Xtream API passes automated conformance tests, and the [manual checklist](docs/clients/uhf.md) is waiting for a run on a real device.
-- Raspberry Pi performance has not been measured. `scripts/benchmark.sh` exists, but no Pi results are recorded in [docs/benchmarks.md](docs/benchmarks.md).
+- Raspberry Pi: the install guide was followed on a Pi 4 Model B with 2 GB of RAM on 5 November 2026, and idle use and latency are in [docs/benchmarks.md](docs/benchmarks.md) (a one-item library, SD card). A Pi 5, a USB drive and large libraries have not been tested.
 - ARM64 and AMD64 images build, and the stack starts on an Apple Silicon host.
 - The offline test passes (`scripts/offline-test.sh`: the whole stack on a network with no internet access).
 - Automated tests use a fake yt-dlp, so downloads from live YouTube are not part of them. YouTube changes often; update yt-dlp now and then with `scripts/update-yt-dlp.sh`.
